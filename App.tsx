@@ -47,7 +47,7 @@ const CornerConfettiCannon = ({ active }: { active: boolean }) => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    
+
     const updateCanvasSize = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
@@ -84,7 +84,7 @@ const CornerConfettiCannon = ({ active }: { active: boolean }) => {
       if (particles.current.length > 0) animationFrameRef.current = requestAnimationFrame(loop);
     };
     animationFrameRef.current = requestAnimationFrame(loop);
-    
+
     return () => {
       cancelAnimationFrame(animationFrameRef.current);
       window.removeEventListener('resize', updateCanvasSize);
@@ -100,13 +100,16 @@ const App: React.FC = () => {
   const [deck, setDeck] = useState<Gift[]>([]);
   const [deckIndex, setDeckIndex] = useState(0);
   const [history, setHistory] = useState<Gift[]>([]);
-  
+
   const [isMusicOn, setIsMusicOn] = useState(false);
   const [isSfxOn, setIsSfxOn] = useState(true);
   const [copied, setCopied] = useState(false);
   const [isSpinning, setIsSpinning] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const workshopRef = useRef<WorkshopApp | null>(null);
+
+  // ✅ NEW: 确保只注册一次“首次点击解锁音频”
+  const hasBoundUnlockRef = useRef(false);
 
   // Fisher-Yates with crypto randomness
   const shuffleGifts = (array: Gift[]): Gift[] => {
@@ -141,8 +144,6 @@ const App: React.FC = () => {
       setDeckIndex(0);
       localStorage.setItem(STORAGE_KEYS.DECK, JSON.stringify(newDeck));
       localStorage.setItem(STORAGE_KEYS.INDEX, '0');
-      // History is only cleared if forcing a full reset, 
-      // otherwise we might want to keep the "All Collected" visual for a bit.
       if (forceNew) {
         setHistory([]);
         localStorage.removeItem(STORAGE_KEYS.COLLECTED);
@@ -156,19 +157,37 @@ const App: React.FC = () => {
     const handleResize = () => workshopRef.current?.resize();
     window.addEventListener('resize', handleResize);
 
+    // ✅ NEW: 页面任意首次点击，先 unlock（满足 iOS/Chrome autoplay policy）
+    if (!hasBoundUnlockRef.current) {
+      hasBoundUnlockRef.current = true;
+
+      const unlockOnce = () => {
+        // unlockAudio 里通常会把 bgm play/pause 一下，或创建 AudioContext
+        soundManager.unlockAudio();
+      };
+
+      window.addEventListener('pointerdown', unlockOnce, { once: true });
+    }
+
     return () => {
-        window.removeEventListener('resize', handleResize);
-        if(workshopRef.current) workshopRef.current.app.destroy(true);
+      window.removeEventListener('resize', handleResize);
+      if (workshopRef.current) workshopRef.current.app.destroy(true);
     };
   }, []);
 
   const handleOpenCard = () => {
     soundManager.playSfx('click');
+
+    // ✅ NEW: 再保险一次：按钮点击一定算 user gesture
     soundManager.unlockAudio();
-    setIsMusicOn(true);
+
+    // ✅ NEW: 开始播放/切换背景音乐，并同步 UI 状态
+    const musicOn = !!soundManager.toggleMusic();
+    setIsMusicOn(musicOn);
+
     setState(AppState.WORKSHOP_PAN);
     workshopRef.current?.runWorkshopPan(() => {
-        setState(AppState.DIALOGUE);
+      setState(AppState.DIALOGUE);
     });
   };
 
@@ -178,11 +197,9 @@ const App: React.FC = () => {
     setShowConfetti(false);
     soundManager.playSfx('spin');
 
-    // Determine current gift
     let currentDeck = [...deck];
     let currentIndex = deckIndex;
 
-    // If we finished the deck, reshuffle immediately for the next set
     if (currentIndex >= currentDeck.length) {
       currentDeck = shuffleGifts(GIFTS);
       currentIndex = 0;
@@ -191,10 +208,10 @@ const App: React.FC = () => {
     }
 
     const draw = currentDeck[currentIndex];
-    
+
     setTimeout(() => {
       setSelectedGift(draw);
-      
+
       const newIndex = currentIndex + 1;
       setDeckIndex(newIndex);
       localStorage.setItem(STORAGE_KEYS.INDEX, newIndex.toString());
@@ -231,14 +248,14 @@ const App: React.FC = () => {
       {/* Control Overlay */}
       {state !== AppState.INTRO && (
         <div className="fixed top-4 right-4 flex gap-2 z-[100] p-safe-top">
-          <button 
-            onClick={() => setIsMusicOn(!!soundManager.toggleMusic())} 
+          <button
+            onClick={() => setIsMusicOn(!!soundManager.toggleMusic())}
             className={`p-3 rounded-full transition-all shadow-xl interactive active:scale-90 ${isMusicOn ? 'bg-green-500 text-white' : 'bg-white/90 text-slate-400'}`}
           >
             {isMusicOn ? <Music size={20} /> : <Music2 size={20} />}
           </button>
-          <button 
-            onClick={() => { soundManager.setSfxEnabled(!isSfxOn); setIsSfxOn(!isSfxOn); }} 
+          <button
+            onClick={() => { soundManager.setSfxEnabled(!isSfxOn); setIsSfxOn(!isSfxOn); }}
             className={`p-3 rounded-full transition-all shadow-xl interactive active:scale-90 ${isSfxOn ? 'bg-red-500 text-white' : 'bg-white/90 text-slate-400'}`}
           >
             {isSfxOn ? <Volume2 size={20} /> : <VolumeX size={20} />}
@@ -251,13 +268,13 @@ const App: React.FC = () => {
         <div className="fixed inset-0 flex flex-col items-center justify-center bg-[radial-gradient(circle_at_center,_#dc2626_0%,_#064e3b_100%)] z-[1000] p-6">
           <div className="bg-white p-8 md:p-14 rounded-[3.5rem] shadow-[0_30px_70px_-15px_rgba(0,0,0,0.6)] max-w-lg w-full transform animate-float border border-white/40 flex flex-col items-center text-center">
             <div className="w-20 h-20 md:w-24 md:h-24 bg-red-50 rounded-full flex items-center justify-center mb-6 shadow-inner">
-                <MailOpen className="text-red-600" size={44} />
+              <MailOpen className="text-red-600" size={44} />
             </div>
             <h1 className={`font-festive text-red-600 leading-tight mb-4 ${responsiveTitle}`}>Season's Greetings!</h1>
             <p className={`text-slate-700 font-round font-bold italic mb-10 leading-relaxed ${responsiveText}`}>
               "Stephanie has sent you a magical holiday surprise."
             </p>
-            <button 
+            <button
               onClick={handleOpenCard}
               className="bg-red-600 hover:bg-red-700 text-white font-black py-4 md:py-5 px-10 md:px-14 rounded-[2rem] text-xl md:text-2xl transition-all shadow-[0_8px_0_#991b1b] active:translate-y-2 active:shadow-none interactive flex items-center gap-3"
             >
@@ -271,7 +288,7 @@ const App: React.FC = () => {
 
       {/* Cinematic Pan / Dialogue */}
       {state === AppState.WORKSHOP_PAN && (
-        <button 
+        <button
           onClick={() => { soundManager.playSfx('click'); workshopRef.current?.skipPan(); setState(AppState.DIALOGUE); }}
           className="fixed bottom-8 right-8 flex items-center gap-2 bg-white text-slate-800 px-6 py-3 rounded-full font-black shadow-2xl interactive z-[100]"
         >
@@ -287,7 +304,7 @@ const App: React.FC = () => {
               <p className="text-xl md:text-2xl font-round text-green-800 leading-tight font-bold italic">
                 “Merry Christmas! Welcome to Santa’s Workshop — a little surprise is waiting just for you.”
               </p>
-              <button 
+              <button
                 onClick={() => { soundManager.playSfx('click'); setState(AppState.GACHA); }}
                 className="bg-green-600 hover:bg-green-700 text-white font-round font-black py-3 px-8 rounded-2xl text-lg transition-all shadow-[0_6px_0_rgb(21,128,61)] active:translate-y-1 active:shadow-none interactive"
               >
@@ -301,93 +318,102 @@ const App: React.FC = () => {
       {/* Gacha Machine */}
       {state === AppState.GACHA && (
         <div className="fixed inset-0 flex flex-col items-center justify-center bg-white/20 backdrop-blur-sm z-[90] p-4">
-           <div className="bg-red-600 p-8 rounded-[3.5rem] border-[8px] border-yellow-400 shadow-2xl w-full max-w-[300px] text-center space-y-6 font-round relative animate-in zoom-in-95">
-              <div className="h-32 bg-sky-100/30 rounded-[2rem] border-4 border-red-800 flex items-center justify-center relative overflow-hidden shadow-inner">
-                 {GIFTS.map((g, i) => (
-                   <div key={g.id} className={`w-8 h-8 rounded-full border-2 border-white/40 absolute ${isSpinning ? 'animate-bounce' : ''}`} style={{ backgroundColor: g.hex, left: `${15 + (i * 10)}%`, top: `${30 + (i % 2) * 20}%` }}></div>
-                 ))}
-              </div>
-              <div className="flex justify-center">
-                <button 
-                    onClick={handleDraw} disabled={isSpinning}
-                    className="w-24 h-24 bg-yellow-400 rounded-full border-[8px] border-red-900 flex items-center justify-center transition-all shadow-xl interactive active:scale-95 group"
-                >
-                    <div className={`w-3 h-16 bg-red-900 rounded-full transition-transform duration-[2500ms] ${isSpinning ? 'rotate-[1440deg]' : 'group-hover:rotate-12'}`} />
-                </button>
-              </div>
-              <div className="text-white font-black italic">
-                <h2 className="text-2xl uppercase tracking-tighter text-yellow-50">GIFT-O-MATIC</h2>
-                <p className="text-red-100 text-[10px] mt-1 opacity-80 uppercase tracking-widest">
-                  {deckIndex < GIFTS.length ? `${GIFTS.length - deckIndex} GIFTS LEFT IN SET` : 'SET COMPLETE - RESHUFFLING!'}
-                </p>
-              </div>
-           </div>
+          <div className="bg-red-600 p-8 rounded-[3.5rem] border-[8px] border-yellow-400 shadow-2xl w-full max-w-[300px] text-center space-y-6 font-round relative animate-in zoom-in-95">
+            <div className="h-32 bg-sky-100/30 rounded-[2rem] border-4 border-red-800 flex items-center justify-center relative overflow-hidden shadow-inner">
+              {GIFTS.map((g, i) => (
+                <div
+                  key={g.id}
+                  className={`w-8 h-8 rounded-full border-2 border-white/40 absolute ${isSpinning ? 'animate-bounce' : ''}`}
+                  style={{ backgroundColor: g.hex, left: `${15 + (i * 10)}%`, top: `${30 + (i % 2) * 20}%` }}
+                />
+              ))}
+            </div>
+            <div className="flex justify-center">
+              <button
+                onClick={handleDraw} disabled={isSpinning}
+                className="w-24 h-24 bg-yellow-400 rounded-full border-[8px] border-red-900 flex items-center justify-center transition-all shadow-xl interactive active:scale-95 group"
+              >
+                <div className={`w-3 h-16 bg-red-900 rounded-full transition-transform duration-[2500ms] ${isSpinning ? 'rotate-[1440deg]' : 'group-hover:rotate-12'}`} />
+              </button>
+            </div>
+            <div className="text-white font-black italic">
+              <h2 className="text-2xl uppercase tracking-tighter text-yellow-50">GIFT-O-MATIC</h2>
+              <p className="text-red-100 text-[10px] mt-1 opacity-80 uppercase tracking-widest">
+                {deckIndex < GIFTS.length ? `${GIFTS.length - deckIndex} GIFTS LEFT IN SET` : 'SET COMPLETE - RESHUFFLING!'}
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
       {/* Result Page */}
       {state === AppState.RESULT && selectedGift && (
         <div className="relative flex-1 flex flex-col bg-white/95 backdrop-blur-3xl z-[110] font-round animate-in fade-in duration-700 min-h-[100dvh]">
-          
+
           <div className="flex-1 flex flex-col items-center w-full max-w-4xl mx-auto px-6 pt-12 pb-32">
-            
+
             <div className="flex items-center gap-2 text-yellow-500 mb-2 shrink-0">
-                <Sparkles size={16} />
-                <h2 className="font-black tracking-[0.3em] uppercase text-[10px] md:text-sm">Gift Unwrapped</h2>
-                <Sparkles size={16} />
+              <Sparkles size={16} />
+              <h2 className="font-black tracking-[0.3em] uppercase text-[10px] md:text-sm">Gift Unwrapped</h2>
+              <Sparkles size={16} />
             </div>
-            
+
             <h1 className={`font-festive text-red-600 leading-tight mb-2 text-center drop-shadow-sm ${responsiveTitle}`}>
-                {selectedGift.name}
+              {selectedGift.name}
             </h1>
-            
+
             <p className={`text-slate-600 mb-8 text-center italic font-bold max-w-md px-4 leading-snug ${responsiveText}`}>
               "{selectedGift.description}"
             </p>
-            
+
             <div className="relative flex flex-col items-center justify-center min-h-[180px] max-h-[min(35dvh,320px)] w-full mb-10 shrink-0 icon-bounce">
-                <div className="absolute inset-0 bg-yellow-400/20 blur-[100px] rounded-full"></div>
-                <div className="text-[clamp(8rem,25vh,14rem)] leading-none relative z-10 drop-shadow-2xl select-none">
-                    {selectedGift.emoji}
-                </div>
+              <div className="absolute inset-0 bg-yellow-400/20 blur-[100px] rounded-full"></div>
+              <div className="text-[clamp(8rem,25vh,14rem)] leading-none relative z-10 drop-shadow-2xl select-none">
+                {selectedGift.emoji}
+              </div>
             </div>
 
             <div className="bg-green-50/90 p-8 md:p-10 rounded-[2.5rem] border-4 border-green-200/80 shadow-lg text-center mb-10 w-full max-w-lg shrink-0 transform -rotate-1">
-                <p className="text-xl md:text-2xl font-round text-green-800 leading-relaxed font-bold italic">
-                    “Stephanie wishes you a Merry Christmas and a wonderful holiday memory.”
-                </p>
+              <p className="text-xl md:text-2xl font-round text-green-800 leading-relaxed font-bold italic">
+                “Stephanie wishes you a Merry Christmas and a wonderful holiday memory.”
+              </p>
             </div>
 
             <div className="bg-slate-50 p-5 rounded-[2rem] w-full max-w-sm border border-slate-100 shadow-inner shrink-0 mb-4">
-                <p className="text-[10px] text-slate-400 uppercase tracking-widest mb-4 font-black text-center">Collection: {history.length}/{GIFTS.length}</p>
-                <div className="flex gap-3 overflow-x-auto pb-1 justify-center items-center">
-                    {GIFTS.map((g) => {
-                      const collected = history.some(h => h.id === g.id);
-                      return (
-                        <div key={g.id} className={`flex-shrink-0 w-11 h-11 rounded-2xl flex items-center justify-center transition-all border ${collected ? 'bg-white shadow-sm border-slate-100 text-xl' : 'bg-slate-200/50 border-dashed border-slate-300 text-slate-300'}`}>
-                            {collected ? g.emoji : '?'}
-                        </div>
-                      );
-                    })}
-                </div>
+              <p className="text-[10px] text-slate-400 uppercase tracking-widest mb-4 font-black text-center">Collection: {history.length}/{GIFTS.length}</p>
+              <div className="flex gap-3 overflow-x-auto pb-1 justify-center items-center">
+                {GIFTS.map((g) => {
+                  const collected = history.some(h => h.id === g.id);
+                  return (
+                    <div
+                      key={g.id}
+                      className={`flex-shrink-0 w-11 h-11 rounded-2xl flex items-center justify-center transition-all border ${
+                        collected ? 'bg-white shadow-sm border-slate-100 text-xl' : 'bg-slate-200/50 border-dashed border-slate-300 text-slate-300'
+                      }`}
+                    >
+                      {collected ? g.emoji : '?'}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
           <div className="sticky bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-slate-200 p-4 md:p-6 z-[120] shadow-[0_-10px_30px_rgba(0,0,0,0.05)]">
             <div className="max-w-md mx-auto flex gap-3 md:gap-4 pb-safe-bottom">
-              <button 
-                  onClick={copyUrl} 
-                  className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white py-4 px-4 rounded-2xl font-black text-base transition-all shadow-[0_5px_0_#991b1b] active:translate-y-1 active:shadow-none interactive"
+              <button
+                onClick={copyUrl}
+                className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white py-4 px-4 rounded-2xl font-black text-base transition-all shadow-[0_5px_0_#991b1b] active:translate-y-1 active:shadow-none interactive"
               >
-                  {copied ? <Check size={18} /> : <Share2 size={18} />}
-                  <span>{copied ? "Copied!" : "Share Link"}</span>
+                {copied ? <Check size={18} /> : <Share2 size={18} />}
+                <span>{copied ? "Copied!" : "Share Link"}</span>
               </button>
-              <button 
-                  onClick={() => { soundManager.playSfx('click'); setState(AppState.GACHA); setShowConfetti(false); }} 
-                  className="flex-1 flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-900 py-4 px-4 rounded-2xl font-black text-base transition-all border-2 border-slate-200 shadow-lg interactive active:scale-95"
+              <button
+                onClick={() => { soundManager.playSfx('click'); setState(AppState.GACHA); setShowConfetti(false); }}
+                className="flex-1 flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-900 py-4 px-4 rounded-2xl font-black text-base transition-all border-2 border-slate-200 shadow-lg interactive active:scale-95"
               >
-                  <RotateCcw size={18} />
-                  <span>{deckIndex >= GIFTS.length ? 'Start New Set' : 'Spin Again'}</span>
+                <RotateCcw size={18} />
+                <span>{deckIndex >= GIFTS.length ? 'Start New Set' : 'Spin Again'}</span>
               </button>
             </div>
           </div>
