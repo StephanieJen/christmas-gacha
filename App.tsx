@@ -179,7 +179,7 @@ const App: React.FC = () => {
     soundManager.playSfx('click');
 
     // ✅ NEW: 再保险一次：按钮点击一定算 user gesture
-    soundManager.unlockAudio();
+    soundManager.onFirstUserGesture():
 
     // ✅ NEW: 开始播放/切换背景音乐，并同步 UI 状态
     const musicOn = !!soundManager.toggleMusic();
