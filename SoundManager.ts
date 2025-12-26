@@ -8,7 +8,7 @@ type SfxType = "click" | "spin" | "reveal";
 class SoundManager {
   private ctx: AudioContext | null = null;
 
-  private musicEnabled = true;   // default ON (but still needs first gesture)
+  private musicEnabled = true; // default ON (but still needs first gesture)
   private sfxEnabled = true;
 
   private musicAudio: HTMLAudioElement | null = null;
@@ -21,13 +21,22 @@ class SoundManager {
     // Grab audio lazily; do not auto-play here (browser blocks)
   }
 
-  private ensureCtx() {
+  private ensureCtx(): AudioContext {
     if (!this.ctx) {
       this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
-    if (this.ctx.state === "suspended") {
-      // Resume needs a user gesture in many browsers; safe to call anyway
-      this.ctx.resume().catch(() => {});
+    return this.ctx;
+  }
+
+  /** Resume AudioContext (best effort). In Safari/iOS this must be triggered by a user gesture. */
+  private async resumeCtx(): Promise<void> {
+    const ctx = this.ensureCtx();
+    if (ctx.state === "suspended") {
+      try {
+        await ctx.resume();
+      } catch {
+        // ignore; may still work via HTMLAudio element
+      }
     }
   }
 
@@ -41,6 +50,7 @@ class SoundManager {
     el.loop = true;
     el.preload = "auto";
     el.muted = false;
+    el.playsInline = true; // helpful on iOS
 
     // Helpful debug (optional)
     el.addEventListener("error", () => {
@@ -50,49 +60,6 @@ class SoundManager {
 
     this.musicAudio = el;
     return el;
-  }
-
-  /**
-   * Call this ONCE from the very first user gesture:
-   * e.g. "Open Card" / "Let's Draw" button click
-   */
-  public unlockAudio(): void {
-    if (this.audioUnlocked) return;
-
-    this.ensureCtx();
-    const audio = this.getAudioElement();
-    if (!audio) {
-      console.warn("[BGM] #bgm element not found. Did you add it to index.html?");
-      return;
-    }
-
-    // Make sure we start from a known state
-    audio.currentTime = 0;
-    audio.muted = false;
-
-    // Start silent, then fade in
-    audio.volume = 0;
-
-    // IMPORTANT: play() must happen inside the user gesture call stack
-    const p = audio.play();
-
-    // If play() succeeds, we consider audio unlocked for this session
-    Promise.resolve(p)
-      .then(() => {
-        this.audioUnlocked = true;
-
-        // Only enable music if user hasn't turned it off
-        if (this.musicEnabled) {
-          this.fadeTo(this.targetMusicVolume, 1.8);
-        } else {
-          // user wants music off, pause immediately
-          audio.pause();
-        }
-      })
-      .catch((e) => {
-        // Browser blocked because gesture wasn't recognized or user settings
-        console.warn("[BGM] play() blocked. Ensure unlockAudio() is called directly in a click handler.", e);
-      });
   }
 
   /** Smoothly fade BGM volume to a target (uses GSAP if available, else fallback). */
@@ -122,6 +89,97 @@ class SoundManager {
     requestAnimationFrame(tick);
   }
 
+  /** Try to play audio safely; returns true if playback started. */
+  private async safePlay(audio: HTMLAudioElement): Promise<boolean> {
+    try {
+      // resume ctx first (especially for SFX). Even if it fails, HTMLAudio may still play.
+      await this.resumeCtx();
+
+      const p = audio.play();
+      await Promise.resolve(p);
+      return true;
+    } catch (e) {
+      console.warn(
+        "[BGM] play() blocked. Make sure this runs directly inside a user click handler.",
+        e
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Call this ONCE from the very first user gesture:
+   * e.g. "Open Card" button click
+   *
+   * This will:
+   *  - resume audio context (best effort)
+   *  - start BGM playback immediately (silently) then fade in
+   *  - mark audioUnlocked=true if started
+   */
+  public unlockAudio(): void {
+    if (this.audioUnlocked) return;
+
+    const audio = this.getAudioElement();
+    if (!audio) {
+      console.warn("[BGM] #bgm element not found. Did you add it to index.html?");
+      return;
+    }
+
+    // Known state
+    audio.muted = false;
+
+    // IMPORTANT:
+    // Setting volume to 0 can sometimes be "too silent" if fade never runs due to navigation.
+    // Use a tiny audible-safe floor, then fade up.
+    audio.volume = 0.01;
+
+    // Start from beginning for first-time greeting feel (optional)
+    audio.currentTime = 0;
+
+    // Must happen inside the user gesture call stack
+    (async () => {
+      const ok = await this.safePlay(audio);
+      if (!ok) return;
+
+      this.audioUnlocked = true;
+
+      // Only enable music if user hasn't turned it off
+      if (this.musicEnabled) {
+        this.fadeTo(this.targetMusicVolume, 1.2);
+      } else {
+        audio.pause();
+      }
+    })();
+  }
+
+  /**
+   * Best “one-liner” for your CTA button.
+   * Call this inside the Open Card button click:
+   *   soundManager.onFirstUserGesture();
+   *
+   * It guarantees:
+   *  - musicEnabled=true
+   *  - if not unlocked: unlock + start playing immediately
+   *  - if already unlocked but paused: start playing + fade in
+   */
+  public onFirstUserGesture(): void {
+    this.musicEnabled = true;
+
+    const audio = this.getAudioElement();
+    if (!audio) {
+      console.warn("[BGM] #bgm element not found. Did you add it to index.html?");
+      return;
+    }
+
+    if (!this.audioUnlocked) {
+      this.unlockAudio();
+      return;
+    }
+
+    // Already unlocked: make sure it's playing now
+    this.startMusic();
+  }
+
   /** Toggle background music on/off. */
   public toggleMusic(): boolean {
     const audio = this.getAudioElement();
@@ -131,26 +189,21 @@ class SoundManager {
 
     if (!this.musicEnabled) {
       // Fade out and pause
-      this.fadeTo(0, 0.7);
-      setTimeout(() => audio.pause(), 750);
+      this.fadeTo(0, 0.6);
+      window.setTimeout(() => audio.pause(), 650);
       return this.musicEnabled;
     }
 
     // Turning on:
-    // If not unlocked yet, caller should call unlockAudio() from a gesture.
-    // We still try play() here; if blocked, user must click again.
-    this.ensureCtx();
-    audio.muted = false;
+    // If not unlocked yet, we must rely on a user gesture.
+    // So: try to unlock/play anyway (will succeed if called from a click).
+    if (!this.audioUnlocked) {
+      this.unlockAudio();
+      return this.musicEnabled;
+    }
 
-    const p = audio.play();
-    Promise.resolve(p)
-      .then(() => {
-        this.fadeTo(this.targetMusicVolume, 1.2);
-      })
-      .catch((e) => {
-        console.warn("[BGM] play() blocked. Click 'Open Card'/'Let's Draw' once to enable audio.", e);
-      });
-
+    // Already unlocked: start playing + fade in
+    this.startMusic();
     return this.musicEnabled;
   }
 
@@ -161,19 +214,19 @@ class SoundManager {
     const audio = this.getAudioElement();
     if (!audio) return;
 
-    this.ensureCtx();
     audio.muted = false;
 
-    const p = audio.play();
-    Promise.resolve(p)
-      .then(() => {
-        // Mark unlocked if we successfully played
-        this.audioUnlocked = true;
-        this.fadeTo(this.targetMusicVolume, 1.2);
-      })
-      .catch((e) => {
-        console.warn("[BGM] startMusic blocked. Call unlockAudio() from a click handler first.", e);
-      });
+    (async () => {
+      const ok = await this.safePlay(audio);
+      if (!ok) return;
+
+      // Mark unlocked if we successfully played
+      this.audioUnlocked = true;
+
+      // ensure volume ramps to target
+      if (audio.volume < 0.01) audio.volume = 0.01;
+      this.fadeTo(this.targetMusicVolume, 0.9);
+    })();
   }
 
   public stopMusic(): void {
@@ -182,14 +235,18 @@ class SoundManager {
     const audio = this.getAudioElement();
     if (!audio) return;
 
-    this.fadeTo(0, 0.7);
-    setTimeout(() => audio.pause(), 750);
+    this.fadeTo(0, 0.6);
+    window.setTimeout(() => audio.pause(), 650);
   }
 
   /** Enable/disable SFX (oscillator based). */
   public setSfxEnabled(val: boolean): void {
     this.sfxEnabled = val;
-    if (val) this.ensureCtx();
+    if (val) {
+      // best effort: create/resume ctx
+      this.ensureCtx();
+      this.resumeCtx().catch(() => {});
+    }
   }
 
   /** Optional: allow UI to set BGM target volume. */
@@ -206,15 +263,20 @@ class SoundManager {
   public playSfx(type: SfxType): void {
     if (!this.sfxEnabled) return;
 
-    this.ensureCtx();
-    if (!this.ctx) return;
+    const ctx = this.ensureCtx();
+    if (!ctx) return;
 
-    const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
+    // Try resume (won't hurt; may fail if not in gesture)
+    if (ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
 
     osc.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(ctx.destination);
 
     // Default
     osc.type = "sine";
@@ -247,15 +309,6 @@ class SoundManager {
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
     osc.start(now);
     osc.stop(now + 0.48);
-  }
-
-  /**
-   * Convenience method: call from the FIRST CTA click.
-   * This both unlocks audio and ensures BGM is on.
-   */
-  public onFirstUserGesture(): void {
-    this.musicEnabled = true;
-    this.unlockAudio();
   }
 }
 
