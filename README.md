@@ -1,11 +1,23 @@
-<div align="center">
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+# Stephanie's 2D Christmas Workshop
 
-  <h1>Built with AI Studio</h2>
+A premium 2D cartoon interactive greeting card featuring Santa's workshop and a gift gacha machine.
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+## How to Run Locally
+Since this project uses PixiJS and React via ES modules, it requires a local server.
+1. Use VS Code's **Live Server** extension.
+2. OR run: `npx serve .`
+3. Open `index.html` in your browser.
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+## Deployment to GitHub Pages
+1. Push this code to a new GitHub repository.
+2. Navigate to **Settings > Pages**.
+3. Under **Build and deployment**, select `main` branch and `/ (root)` folder.
+4. Hit **Save**.
 
-</div>
+## How it works
+- **PixiJS**: Handles the high-performance 2D rendering of the workshop scene using vector graphics (Graphics API).
+- **GSAP**: Manages the smooth cinematic pan and UI animations.
+- **React**: Handles the interactive UI overlays, dialogue, and application state.
+- **Web Audio API**: Generates procedural chime and spin sounds without needing large external assets.
+- **Uniform Gacha**: Uses standard array indexing for perfectly balanced 1/7 probability.
