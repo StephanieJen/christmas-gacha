@@ -2,7 +2,18 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AppState, GIFTS, Gift } from './types';
 import { WorkshopApp } from './WorkshopApp';
 import { soundManager } from './SoundManager';
-import { Volume2, VolumeX, Music, Music2, Share2, Check, RotateCcw, SkipForward, Sparkles, MailOpen } from 'lucide-react';
+import {
+  Volume2,
+  VolumeX,
+  Music,
+  Music2,
+  Share2,
+  Check,
+  RotateCcw,
+  SkipForward,
+  Sparkles,
+  MailOpen
+} from 'lucide-react';
 
 const STORAGE_KEYS = {
   DECK: 'st_gacha_deck_v1',
@@ -20,9 +31,10 @@ const CornerConfettiCannon = ({ active }: { active: boolean }) => {
     const createBatch = (x: number, y: number, angleDeg: number) => {
       for (let i = 0; i < 60; i++) {
         const angle = (angleDeg + (Math.random() * 40 - 20)) * (Math.PI / 180);
-        const speed = (400 + Math.random() * 400);
+        const speed = 400 + Math.random() * 400;
         particles.current.push({
-          x, y,
+          x,
+          y,
           vx: Math.cos(angle) * speed,
           vy: Math.sin(angle) * speed,
           rotation: Math.random() * Math.PI * 2,
@@ -30,7 +42,7 @@ const CornerConfettiCannon = ({ active }: { active: boolean }) => {
           color: colors[Math.floor(Math.random() * colors.length)],
           life: 2 + Math.random(),
           width: 8 + Math.random() * 4,
-          height: 6 + Math.random() * 4,
+          height: 6 + Math.random() * 4
         });
       }
     };
@@ -61,7 +73,9 @@ const CornerConfettiCannon = ({ active }: { active: boolean }) => {
     const loop = (now: number) => {
       const dt = (now - lastTime) / 1000;
       lastTime = now;
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+
       for (let i = particles.current.length - 1; i >= 0; i--) {
         const p = particles.current[i];
         p.vy += 1000 * dt;
@@ -69,10 +83,12 @@ const CornerConfettiCannon = ({ active }: { active: boolean }) => {
         p.y += p.vy * dt;
         p.rotation += p.angularVelocity * dt;
         p.life -= dt;
+
         if (p.life <= 0) {
           particles.current.splice(i, 1);
           continue;
         }
+
         ctx.save();
         ctx.translate(p.x, p.y);
         ctx.rotate(p.rotation);
@@ -81,8 +97,12 @@ const CornerConfettiCannon = ({ active }: { active: boolean }) => {
         ctx.fillRect(-p.width / 2, -p.height / 2, p.width, p.height);
         ctx.restore();
       }
-      if (particles.current.length > 0) animationFrameRef.current = requestAnimationFrame(loop);
+
+      if (particles.current.length > 0) {
+        animationFrameRef.current = requestAnimationFrame(loop);
+      }
     };
+
     animationFrameRef.current = requestAnimationFrame(loop);
 
     return () => {
@@ -106,16 +126,17 @@ const App: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [isSpinning, setIsSpinning] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+
   const workshopRef = useRef<WorkshopApp | null>(null);
 
-  // ✅ NEW: 确保只注册一次“首次点击解锁音频”
+  // ✅ 确保只注册一次“首次点击解锁音频”
   const hasBoundUnlockRef = useRef(false);
 
   // Fisher-Yates with crypto randomness
   const shuffleGifts = (array: Gift[]): Gift[] => {
     const shuffled = [...array];
     for (let i = shuffled.length - 1; i > 0; i--) {
-      let randomValue;
+      let randomValue: number;
       if (window.crypto && window.crypto.getRandomValues) {
         const array32 = new Uint32Array(1);
         window.crypto.getRandomValues(array32);
@@ -144,6 +165,7 @@ const App: React.FC = () => {
       setDeckIndex(0);
       localStorage.setItem(STORAGE_KEYS.DECK, JSON.stringify(newDeck));
       localStorage.setItem(STORAGE_KEYS.INDEX, '0');
+
       if (forceNew) {
         setHistory([]);
         localStorage.removeItem(STORAGE_KEYS.COLLECTED);
@@ -153,16 +175,16 @@ const App: React.FC = () => {
 
   useEffect(() => {
     initDeck();
+
     workshopRef.current = new WorkshopApp(document.getElementById('game-container')!);
     const handleResize = () => workshopRef.current?.resize();
     window.addEventListener('resize', handleResize);
 
-    // ✅ NEW: 页面任意首次点击，先 unlock（满足 iOS/Chrome autoplay policy）
+    // ✅ 兜底：页面任意首次点击解锁音频（iOS/Chrome autoplay policy）
     if (!hasBoundUnlockRef.current) {
       hasBoundUnlockRef.current = true;
 
       const unlockOnce = () => {
-        // unlockAudio 里通常会把 bgm play/pause 一下，或创建 AudioContext
         soundManager.unlockAudio();
       };
 
@@ -178,12 +200,9 @@ const App: React.FC = () => {
   const handleOpenCard = () => {
     soundManager.playSfx('click');
 
-    // ✅ NEW: 再保险一次：按钮点击一定算 user gesture
-    soundManager.onFirstUserGesture():
-
-    // ✅ NEW: 开始播放/切换背景音乐，并同步 UI 状态
-    const musicOn = !!soundManager.toggleMusic();
-    setIsMusicOn(musicOn);
+    // ✅ 关键：按钮点击属于 user gesture，直接解锁 + 开始音乐
+    soundManager.onFirstUserGesture();
+    setIsMusicOn(true);
 
     setState(AppState.WORKSHOP_PAN);
     workshopRef.current?.runWorkshopPan(() => {
@@ -216,8 +235,8 @@ const App: React.FC = () => {
       setDeckIndex(newIndex);
       localStorage.setItem(STORAGE_KEYS.INDEX, newIndex.toString());
 
-      setHistory(prev => {
-        const exists = prev.find(g => g.id === draw.id);
+      setHistory((prev) => {
+        const exists = prev.find((g) => g.id === draw.id);
         const newHist = exists ? prev : [draw, ...prev];
         const result = newHist.slice(0, 7);
         localStorage.setItem(STORAGE_KEYS.COLLECTED, JSON.stringify(result));
@@ -238,8 +257,8 @@ const App: React.FC = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const responsiveTitle = "text-[clamp(2rem,6vw,3.5rem)]";
-  const responsiveText = "text-[clamp(1rem,2.5vw,1.4rem)]";
+  const responsiveTitle = 'text-[clamp(2rem,6vw,3.5rem)]';
+  const responsiveText = 'text-[clamp(1rem,2.5vw,1.4rem)]';
 
   return (
     <div className="ui-layer min-h-[100dvh]">
@@ -250,13 +269,20 @@ const App: React.FC = () => {
         <div className="fixed top-4 right-4 flex gap-2 z-[100] p-safe-top">
           <button
             onClick={() => setIsMusicOn(!!soundManager.toggleMusic())}
-            className={`p-3 rounded-full transition-all shadow-xl interactive active:scale-90 ${isMusicOn ? 'bg-green-500 text-white' : 'bg-white/90 text-slate-400'}`}
+            className={`p-3 rounded-full transition-all shadow-xl interactive active:scale-90 ${
+              isMusicOn ? 'bg-green-500 text-white' : 'bg-white/90 text-slate-400'
+            }`}
           >
             {isMusicOn ? <Music size={20} /> : <Music2 size={20} />}
           </button>
           <button
-            onClick={() => { soundManager.setSfxEnabled(!isSfxOn); setIsSfxOn(!isSfxOn); }}
-            className={`p-3 rounded-full transition-all shadow-xl interactive active:scale-90 ${isSfxOn ? 'bg-red-500 text-white' : 'bg-white/90 text-slate-400'}`}
+            onClick={() => {
+              soundManager.setSfxEnabled(!isSfxOn);
+              setIsSfxOn(!isSfxOn);
+            }}
+            className={`p-3 rounded-full transition-all shadow-xl interactive active:scale-90 ${
+              isSfxOn ? 'bg-red-500 text-white' : 'bg-white/90 text-slate-400'
+            }`}
           >
             {isSfxOn ? <Volume2 size={20} /> : <VolumeX size={20} />}
           </button>
@@ -281,7 +307,9 @@ const App: React.FC = () => {
               <span>Open the Card</span>
               <Sparkles size={20} />
             </button>
-            <p className="mt-8 text-slate-400 font-bold uppercase tracking-widest text-[10px] opacity-70">Tap anywhere to start music</p>
+            <p className="mt-8 text-slate-400 font-bold uppercase tracking-widest text-[10px] opacity-70">
+              Tap anywhere to start music
+            </p>
           </div>
         </div>
       )}
@@ -289,7 +317,11 @@ const App: React.FC = () => {
       {/* Cinematic Pan / Dialogue */}
       {state === AppState.WORKSHOP_PAN && (
         <button
-          onClick={() => { soundManager.playSfx('click'); workshopRef.current?.skipPan(); setState(AppState.DIALOGUE); }}
+          onClick={() => {
+            soundManager.playSfx('click');
+            workshopRef.current?.skipPan();
+            setState(AppState.DIALOGUE);
+          }}
           className="fixed bottom-8 right-8 flex items-center gap-2 bg-white text-slate-800 px-6 py-3 rounded-full font-black shadow-2xl interactive z-[100]"
         >
           <SkipForward size={18} /> Skip
@@ -299,13 +331,18 @@ const App: React.FC = () => {
       {state === AppState.DIALOGUE && (
         <div className="fixed inset-0 flex items-end justify-center pb-8 md:pb-16 px-4 bg-black/20 backdrop-blur-[2px] z-[90]">
           <div className="bg-white p-6 md:p-10 rounded-[2.5rem] border-[6px] border-green-500 max-w-xl w-full flex flex-col sm:flex-row gap-6 items-center shadow-2xl font-round animate-in slide-in-from-bottom-10">
-            <div className="w-24 h-24 md:w-32 md:h-32 bg-green-50 rounded-full flex items-center justify-center text-6xl md:text-7xl shrink-0 border-2 border-green-100 shadow-inner">🧝</div>
+            <div className="w-24 h-24 md:w-32 md:h-32 bg-green-50 rounded-full flex items-center justify-center text-6xl md:text-7xl shrink-0 border-2 border-green-100 shadow-inner">
+              🧝
+            </div>
             <div className="flex-1 space-y-4 text-center sm:text-left">
               <p className="text-xl md:text-2xl font-round text-green-800 leading-tight font-bold italic">
                 “Merry Christmas! Welcome to Santa’s Workshop — a little surprise is waiting just for you.”
               </p>
               <button
-                onClick={() => { soundManager.playSfx('click'); setState(AppState.GACHA); }}
+                onClick={() => {
+                  soundManager.playSfx('click');
+                  setState(AppState.GACHA);
+                }}
                 className="bg-green-600 hover:bg-green-700 text-white font-round font-black py-3 px-8 rounded-2xl text-lg transition-all shadow-[0_6px_0_rgb(21,128,61)] active:translate-y-1 active:shadow-none interactive"
               >
                 Let's Draw!
@@ -324,18 +361,25 @@ const App: React.FC = () => {
                 <div
                   key={g.id}
                   className={`w-8 h-8 rounded-full border-2 border-white/40 absolute ${isSpinning ? 'animate-bounce' : ''}`}
-                  style={{ backgroundColor: g.hex, left: `${15 + (i * 10)}%`, top: `${30 + (i % 2) * 20}%` }}
+                  style={{ backgroundColor: g.hex, left: `${15 + i * 10}%`, top: `${30 + (i % 2) * 20}%` }}
                 />
               ))}
             </div>
+
             <div className="flex justify-center">
               <button
-                onClick={handleDraw} disabled={isSpinning}
+                onClick={handleDraw}
+                disabled={isSpinning}
                 className="w-24 h-24 bg-yellow-400 rounded-full border-[8px] border-red-900 flex items-center justify-center transition-all shadow-xl interactive active:scale-95 group"
               >
-                <div className={`w-3 h-16 bg-red-900 rounded-full transition-transform duration-[2500ms] ${isSpinning ? 'rotate-[1440deg]' : 'group-hover:rotate-12'}`} />
+                <div
+                  className={`w-3 h-16 bg-red-900 rounded-full transition-transform duration-[2500ms] ${
+                    isSpinning ? 'rotate-[1440deg]' : 'group-hover:rotate-12'
+                  }`}
+                />
               </button>
             </div>
+
             <div className="text-white font-black italic">
               <h2 className="text-2xl uppercase tracking-tighter text-yellow-50">GIFT-O-MATIC</h2>
               <p className="text-red-100 text-[10px] mt-1 opacity-80 uppercase tracking-widest">
@@ -349,9 +393,7 @@ const App: React.FC = () => {
       {/* Result Page */}
       {state === AppState.RESULT && selectedGift && (
         <div className="relative flex-1 flex flex-col bg-white/95 backdrop-blur-3xl z-[110] font-round animate-in fade-in duration-700 min-h-[100dvh]">
-
           <div className="flex-1 flex flex-col items-center w-full max-w-4xl mx-auto px-6 pt-12 pb-32">
-
             <div className="flex items-center gap-2 text-yellow-500 mb-2 shrink-0">
               <Sparkles size={16} />
               <h2 className="font-black tracking-[0.3em] uppercase text-[10px] md:text-sm">Gift Unwrapped</h2>
@@ -380,10 +422,12 @@ const App: React.FC = () => {
             </div>
 
             <div className="bg-slate-50 p-5 rounded-[2rem] w-full max-w-sm border border-slate-100 shadow-inner shrink-0 mb-4">
-              <p className="text-[10px] text-slate-400 uppercase tracking-widest mb-4 font-black text-center">Collection: {history.length}/{GIFTS.length}</p>
+              <p className="text-[10px] text-slate-400 uppercase tracking-widest mb-4 font-black text-center">
+                Collection: {history.length}/{GIFTS.length}
+              </p>
               <div className="flex gap-3 overflow-x-auto pb-1 justify-center items-center">
                 {GIFTS.map((g) => {
-                  const collected = history.some(h => h.id === g.id);
+                  const collected = history.some((h) => h.id === g.id);
                   return (
                     <div
                       key={g.id}
@@ -406,10 +450,15 @@ const App: React.FC = () => {
                 className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white py-4 px-4 rounded-2xl font-black text-base transition-all shadow-[0_5px_0_#991b1b] active:translate-y-1 active:shadow-none interactive"
               >
                 {copied ? <Check size={18} /> : <Share2 size={18} />}
-                <span>{copied ? "Copied!" : "Share Link"}</span>
+                <span>{copied ? 'Copied!' : 'Share Link'}</span>
               </button>
+
               <button
-                onClick={() => { soundManager.playSfx('click'); setState(AppState.GACHA); setShowConfetti(false); }}
+                onClick={() => {
+                  soundManager.playSfx('click');
+                  setState(AppState.GACHA);
+                  setShowConfetti(false);
+                }}
                 className="flex-1 flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-900 py-4 px-4 rounded-2xl font-black text-base transition-all border-2 border-slate-200 shadow-lg interactive active:scale-95"
               >
                 <RotateCcw size={18} />
